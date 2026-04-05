@@ -1,11 +1,16 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
+
+# Path to the built frontend (frontend/dist after `npm run build`)
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 from .routers import device as device_router
 from .routers import ws as ws_router
 from .services.device_store import DeviceStore, queue_consumer
@@ -151,3 +156,15 @@ app.add_middleware(
 
 app.include_router(device_router.router)
 app.include_router(ws_router.router)
+
+# Serve the built Vue frontend as static files.
+# API and WebSocket routes are registered first, so they take priority.
+# The fallback html=True serves index.html for any unmatched route (SPA support).
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+    logger.info("Serving frontend from %s", FRONTEND_DIST)
+else:
+    logger.warning(
+        "Frontend dist not found at %s — run 'npm run build' in frontend/ first",
+        FRONTEND_DIST,
+    )

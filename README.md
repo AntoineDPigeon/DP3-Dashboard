@@ -34,15 +34,30 @@ cp .env.example .env
 # Edit .env with your ACCESS_KEY, SECRET_KEY, DEVICE_SN, REGION, MQTT_CLIENT_ID
 ```
 
-### 2. Start backend
+### 2. Production (single process)
+
+Build the frontend and let FastAPI serve everything:
+
 ```bash
+cd frontend
+npm install
+npm run build
+
+cd ../backend
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Open http://localhost:8000
+
+### 3. Development (two processes, hot-reload)
+```bash
+# Terminal 1 — backend
 cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
-```
 
-### 3. Start frontend
-```bash
+# Terminal 2 — frontend (proxies API/WS to backend)
 cd frontend
 npm install
 npm run dev
