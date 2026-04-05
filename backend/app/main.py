@@ -87,42 +87,51 @@ async def lifespan(app: FastAPI):
     device_router.init(store, mqtt_client_instance)
     ws_router.init(store)
 
-    # 2. Fetch MQTT credentials
-    try:
-        creds = await rest_client.get_certification()
-        logger.info("MQTT credentials obtained (broker: %s:%s)", creds.url, creds.port_int)
-    except Exception as e:
-        logger.error("Failed to get MQTT credentials: %s", e)
-        logger.warning("Starting in REST-only mode")
-        creds = None
+    creds = None
 
-    # 3. Fetch initial device state
-    try:
-        raw_quotas = await rest_client.get_all_quotas()
-        if raw_quotas:
-            store.merge_quotas(raw_quotas)
-            logger.info("Initial device state loaded (%d keys)", len(raw_quotas))
-        else:
-            logger.warning("No initial quota data (device may be offline)")
-    except Exception as e:
-        logger.error("Failed to fetch initial quotas: %s", e)
-
-    # 4. Connect MQTT
-    if creds:
+    if settings.is_configured:
+        # 2. Fetch MQTT credentials
         try:
-            mqtt_client_instance.connect(creds)
+            creds = await rest_client.get_certification()
+            logger.info("MQTT credentials obtained (broker: %s:%s)", creds.url, creds.port_int)
         except Exception as e:
-            logger.error("MQTT connection failed: %s", e)
+            logger.error("Failed to get MQTT credentials: %s", e)
+            logger.warning("Starting in REST-only mode")
+
+        # 3. Fetch initial device state
+        try:
+            raw_quotas = await rest_client.get_all_quotas()
+            if raw_quotas:
+                store.merge_quotas(raw_quotas)
+                logger.info("Initial device state loaded (%d keys)", len(raw_quotas))
+            else:
+                logger.warning("No initial quota data (device may be offline)")
+        except Exception as e:
+            logger.error("Failed to fetch initial quotas: %s", e)
+
+        # 4. Connect MQTT
+        if creds:
+            try:
+                mqtt_client_instance.connect(creds)
+            except Exception as e:
+                logger.error("MQTT connection failed: %s", e)
+    else:
+        logger.warning(
+            "EcoFlow credentials not configured. "
+            "Set ACCESS_KEY, SECRET_KEY, and DEVICE_SN in .env to connect."
+        )
+        store.connection_status = "disconnected"
 
     # 5. Start consumer task
     _consumer_task = asyncio.create_task(
         queue_consumer(message_queue, store, mqtt_client_instance)
     )
 
-    # 6. Start REST fallback polling
-    _polling_task = asyncio.create_task(
-        _rest_polling_fallback(rest_client, store, mqtt_client_instance)
-    )
+    # 6. Start REST fallback polling (only if configured)
+    if settings.is_configured:
+        _polling_task = asyncio.create_task(
+            _rest_polling_fallback(rest_client, store, mqtt_client_instance)
+        )
 
     logger.info("Backend startup complete")
     yield
