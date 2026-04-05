@@ -43,11 +43,20 @@ class DeviceStore:
         """Merge partial or full quota data into device state."""
         # Handle nested MQTT messages with moduleType + params
         if "params" in raw and isinstance(raw["params"], dict):
-            self.device.merge_raw_quotas(raw["params"])
+            params = raw["params"]
+            logger.debug("Merging %d params (moduleType=%s)", len(params), raw.get("moduleType"))
+            self.device.merge_raw_quotas(params)
         else:
+            logger.debug("Merging %d top-level quota keys", len(raw))
             self.device.merge_raw_quotas(raw)
 
         self.device.last_updated = time.time()
+        logger.info(
+            "Device state updated: soc=%.1f%% watts_in=%s watts_out=%s",
+            self.device.battery.soc or 0,
+            self.device.power_input.watts_in_sum,
+            self.device.power_output.watts_out_sum,
+        )
 
         # Record snapshot for chart
         self.recent_data.append({
@@ -59,12 +68,17 @@ class DeviceStore:
 
     async def broadcast(self, data: dict[str, Any]) -> None:
         """Send data to all connected WebSocket clients, cleaning up dead ones."""
+        if not self._ws_clients:
+            return
+        logger.debug("Broadcasting %s to %d WebSocket client(s)", data.get("type", "unknown"), len(self._ws_clients))
         dead: list[WebSocket] = []
         for ws in self._ws_clients:
             try:
                 await ws.send_json(data)
             except Exception:
                 dead.append(ws)
+        if dead:
+            logger.info("Removed %d dead WebSocket client(s)", len(dead))
         for ws in dead:
             self._ws_clients.discard(ws)
 

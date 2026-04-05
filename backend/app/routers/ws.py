@@ -27,21 +27,24 @@ async def device_websocket(ws: WebSocket) -> None:
     assert store is not None
     await ws.accept()
     store.add_ws_client(ws)
-    logger.info("WebSocket client connected (total: %d)", len(store._ws_clients))
+    client_host = ws.client.host if ws.client else "unknown"
+    logger.info("WebSocket client connected from %s (total: %d)", client_host, len(store._ws_clients))
 
     try:
         # Send initial snapshot
         snapshot = store.get_snapshot()
+        logger.info("Sending initial snapshot to %s (%d keys)", client_host, len(snapshot))
         await ws.send_json({"type": "state", "data": snapshot})
 
         # Keep alive — the store broadcasts will push data
         while True:
             # Wait for client messages (ping/pong or close)
-            await ws.receive_text()
+            data = await ws.receive_text()
+            logger.debug("WebSocket received from %s: %s", client_host, data)
     except WebSocketDisconnect:
-        pass
+        logger.info("WebSocket client %s disconnected normally", client_host)
     except Exception as e:
-        logger.warning("WebSocket error: %s", e)
+        logger.warning("WebSocket error from %s: %s", client_host, e)
     finally:
         store.remove_ws_client(ws)
-        logger.info("WebSocket client disconnected (total: %d)", len(store._ws_clients))
+        logger.info("WebSocket client removed (total: %d)", len(store._ws_clients))

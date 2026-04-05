@@ -29,25 +29,32 @@ def init(device_store: DeviceStore, mqtt: EcoFlowMqttClient) -> None:
 async def get_device_status() -> dict[str, Any]:
     """Return current device state from the in-memory store."""
     assert store is not None
-    return store.get_snapshot()
+    logger.info("GET /api/device/status")
+    snapshot = store.get_snapshot()
+    logger.debug("GET /api/device/status -> %d keys", len(snapshot))
+    return snapshot
 
 
 @router.get("/recent")
 async def get_recent_data() -> list[dict[str, Any]]:
     """Return recent power data for charts (last ~30 min from in-memory deque)."""
     assert store is not None
-    return store.get_recent()
+    recent = store.get_recent()
+    logger.info("GET /api/device/recent -> %d data points", len(recent))
+    return recent
 
 
 @router.get("/health")
 async def health() -> dict[str, str]:
     """Readiness check — returns connection status."""
     assert store is not None
-    return {
+    result = {
         "status": "ok",
         "mqtt": store.connection_status,
         "has_data": str(store.device.last_updated is not None),
     }
+    logger.info("GET /api/device/health -> mqtt=%s has_data=%s", result["mqtt"], result["has_data"])
+    return result
 
 
 class CommandRequest(BaseModel):
@@ -83,10 +90,14 @@ async def send_command(req: CommandRequest) -> dict[str, Any]:
     mqtt_client.register_command_future(request_id, future)
 
     try:
+        logger.info("POST /api/device/command -> publishing MQTT command id=%d params=%s", request_id, req.params)
         mqtt_client.publish_command(payload)
         result = await asyncio.wait_for(future, timeout=10.0)
+        logger.info("POST /api/device/command -> success (id=%d)", request_id)
         return {"success": True, "data": result}
     except asyncio.TimeoutError:
+        logger.warning("POST /api/device/command -> timeout (id=%d)", request_id)
         return {"success": False, "error": "Command timed out (10s)"}
     except ConnectionError as e:
+        logger.error("POST /api/device/command -> connection error: %s", e)
         raise HTTPException(status_code=503, detail=str(e))

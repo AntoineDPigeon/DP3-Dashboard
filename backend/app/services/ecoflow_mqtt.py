@@ -99,6 +99,7 @@ class EcoFlowMqttClient:
         )
 
     def _on_message(self, client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> None:
+        logger.debug("MQTT message received on %s (%d bytes)", msg.topic, len(msg.payload))
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -107,17 +108,23 @@ class EcoFlowMqttClient:
 
         topic = msg.topic
         if topic.endswith("/quota"):
+            param_count = len(payload.get("params", payload)) if isinstance(payload, dict) else 0
+            logger.info("MQTT quota update received (%d params)", param_count)
+            logger.debug("MQTT quota payload: %s", payload)
             self._loop.call_soon_threadsafe(
                 self._queue.put_nowait,
                 {"type": "quota", "data": payload, "timestamp": time.time()},
             )
         elif topic.endswith("/set_reply"):
             request_id = payload.get("id")
+            logger.info("MQTT set_reply received (id=%s)", request_id)
+            logger.debug("MQTT set_reply payload: %s", payload)
             self._loop.call_soon_threadsafe(
                 self._queue.put_nowait,
                 {"type": "set_reply", "data": payload, "id": request_id},
             )
         elif topic.endswith("/status"):
+            logger.info("MQTT device status update: %s", payload)
             self._loop.call_soon_threadsafe(
                 self._queue.put_nowait,
                 {"type": "status", "data": payload},

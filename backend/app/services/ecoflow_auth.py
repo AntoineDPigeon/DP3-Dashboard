@@ -1,7 +1,10 @@
 import hashlib
 import hmac
+import logging
 import random
 import time
+
+logger = logging.getLogger(__name__)
 
 
 def sign_request(
@@ -34,6 +37,8 @@ def sign_request(
         sign_str.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
+
+    logger.debug("Signed request: nonce=%s timestamp=%s params=%s", nonce, timestamp, params)
 
     return {
         "accessKey": access_key,
